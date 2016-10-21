@@ -1,5 +1,6 @@
 import numpy as np
 from enum import Enum
+from math import inf
 
 class Scenario(Enum): # Kasutame Enum klassi, et eristada hinnanguid
     best_case = 5 # Võit
@@ -220,145 +221,154 @@ def make_move(team, board, move):
 #             break
 #     return (val, best)
 
-def maximiser(team, depth, board):
-    if depth == 0:
-        return (None, None)
-    h = hinnang(team, board, depth)
-    if h == None:
-        return (None, None)
-    if np.count_nonzero(board) == 9:
-        return (h, None)
-    
-    val = -10000
-    best = None
-    for pos in compile_possibilities(board):
-        if not best:
-            best = pos
-        board[pos[0]][pos[1]] = team
-        scen, p = minimiser(team, depth-1, board)
-        board[pos[0]][pos[1]] = 0
-        if scen == None:
-            continue
-        if scen >= val:
-            val = scen
-            best = pos
-    return (val, best)
 
-def minimiser(team, depth, board):
-    if depth == 0:
-        return (None, None)
-    h = hinnang(team, board, depth)
-    if h == None:
-        return (None, None)
-    if np.count_nonzero(board) == 9:
-        return (h, None)
-    
-    val = 10000
-    best = None
-    for pos in compile_possibilities(board):
-        if not best:
-            best = pos
-        board[pos[0]][pos[1]] = 3 - team
-        scen, p = maximiser(team, depth-1, board)
-        board[pos[0]][pos[1]] = 0
-        if scen == None:
-            continue
-        if scen <= val:
-            val = scen
-            best = pos
-    return (val, best)
-    
 
 class Player:
     """docstring for Player."""
     def __init__(self, team):
         self.team = team
         self.hinnangud = np.array([[0,0,0],[0,0,0],[0,0,0]])
+        self.kolmReas = [
+            [ 0, 1, 2 ],
+            [ 3, 4, 5 ],
+            [ 6, 7, 8 ],
+            [ 0, 3, 6 ],
+            [ 1, 4, 7 ],
+            [ 2, 5, 8 ],
+            [ 0, 4, 8 ],
+            [ 2, 4, 6 ]
+        ];
+        self.vaartused = [
+            [     0,   -10,  -100, -1000 ],
+            [    10,     0,     0,     0 ],
+            [   100,     0,     0,     0 ],
+            [  1000,     0,     0,     0 ]
+        ];
 
     def compile_possibilities(self, board, compulsory = None):
-        data = []
+        # data = []
         if (compulsory == None):
             for i in range(3):
                 for j in range(3):
                     if isinstance(board[i][j], np.ndarray):
                         # yield self.compile_possibilities(board, (i, j))
+                        subBoard = board[i][j]
                         for k in range(3):
                             for l in range(3):
-                                data.append(((i, j), (k, l)))
+                                # data.append(((i, j), (k, l)))
+                                if not subBoard[i][j]:
+                                    yield ((i, j), (k, l))
 
         else:
             subBoard = board[compulsory[0]][compulsory[1]]
             for i in range(3):
                 for j in range(3):
                     if not subBoard[i][j]:
-                        data.append((compulsory, (i, j)))
+                        # data.append((compulsory, (i, j)))
+                        yield (compulsory, (i, j))
 
-        return data
+        # return data
 
-    def hinnang(self, board):
+    def hinnang(self, board, depth = 0):
+        hinnang = 0
         myBoard = np.array([[0,0,0],[0,0,0],[0,0,0]])
         for i in range(len(board)):
             for j in range(len(board[i])):
-                if not isinstance(board[i][j], np.ndarray):
+                if isinstance(board[i][j], np.ndarray):
+                    subBoard = board[i][j]
+                    if np.count_nonzero(subBoard) == 9:
+                        countTeam = np.count_nonzero(subBoard == self.team)
+                        if countTeam > 4:
+                            myBoard[i][j] = 1
+                        else:
+                            myBoard[i][j] = 0
+                    else:
+                        hinnang += self.subHinnang(subBoard)
+                else:
                     myBoard[i][j] = board[i][j]
 
-        return hinnang(self.team, myBoard, 1)
+        hinnang += self.subHinnang(myBoard)*10
+        return hinnang
 
-    def maximiser(self, depth, board, compulsory):
+    def subHinnang(self, board):
+        opponent = 3 - self.team;
+        t = 0
+        tempBoard = board.flatten()
+        if np.count_nonzero(tempBoard) < 1:
+            return 0
+
+        for i in range(8):
+            players = others = 0
+            for j in range(3):
+                piece = tempBoard[self.kolmReas[i][j]]
+                if piece == self.team:
+                    players += 1
+                elif piece == opponent:
+                    others += 1
+            t += self.vaartused[players][others]
+
+        totalPlayers = np.count_nonzero(tempBoard == self.team)
+        totalOthers = np.count_nonzero(tempBoard == opponent)
+        difference = totalPlayers - totalOthers
+        if abs(difference) > 1:
+            t += 10*difference
+
+        return t
+
+    def maximiser(self, depth, board, compulsory, alpha = -inf, beta = inf):
+        h = self.hinnang(board, depth)
         if depth == 0:
-            return (None, None)
-        h = self.hinnang(board)
-        if h == None:
-            return (None, None)
+            return (h, None)
+        val = alpha
+        best = None
+        debug = []
+        # for pos in self.compile_possibilities(board, compulsory):
+        #     debug.append(pos)
+        # print('debug', compulsory, debug)
+        # print(board)
+        # for pos in debug:
+        for pos in self.compile_possibilities(board, compulsory):
+            if board[pos[0][0]][pos[0][1]][pos[1][0]][pos[1][1]] != 0:
+                continue
+            if not best:
+                best = pos
+            subBoard = board[pos[0][0]][pos[0][1]]
+            if subBoard[pos[1][0]][pos[1][1]] != 0:
+                print('given not open position', board, pos)
+                exit()
+            subBoard[pos[1][0]][pos[1][1]] = self.team
+            scen, p = self.minimiser(depth-1, board, pos[0])
+            # scen, p = self.minimiser(depth-1, board, pos[0], val, beta)
+            subBoard[pos[1][0]][pos[1][1]] = 0
+            if scen >= val:
+                val = scen
+                best = pos
+            # if val > beta:
+            #     break
+        # print('maxi', val, best)
+        return (val, best)
+
+    def minimiser(self, depth, board, compulsory, alpha = -inf, beta = inf):
+        h = self.hinnang(board, depth)
+        if depth == 0:
+            return (h, None)
         
-        val = -10000
+        val = beta
         best = None
         for pos in self.compile_possibilities(board, compulsory):
             if not best:
                 best = pos
             subBoard = board[pos[0][0]][pos[0][1]]
-            subBoard[pos[1][0]][pos[1][1]] = self.team
-            # subBoard.play(self.team, )
-            # board.play(self.team, pos[1], pos[0])
-            scen, p = self.minimiser(depth-1, board, pos[0])
-            subBoard[pos[1][0]][pos[1][1]] = 0
-            board.play(0, pos[1], pos[0])
-            if scen == None:
-                continue
-            if scen >= val:
-                val = scen
-                best = pos
-
-        print('maxi', val, best)
-        return (val, best)
-
-    def minimiser(self, depth, board, compulsory):
-        if depth == 0:
-            return (None, None)
-        h = self.hinnang(board)
-        if h == None:
-            return (None, None)
-        if np.count_nonzero(board) == 9:
-            return (h, None)
-        
-        val = 10000
-        best = None
-        for pos in self.compile_possibilities(board, compulsory):
-            if not best:
-                best = pos
-            print(pos)
-            board[pos[0][0]][pos[0][1]].board[pos[1][0]][pos[1][1]] = 3 - self.team
-            # board.play(3 - self.team, pos[1], pos[0])
+            subBoard[pos[1][0]][pos[1][1]] = 3 - self.team
             scen, p = self.maximiser(depth-1, board, pos[0])
-            board[pos[0][0]][pos[0][1]].board[pos[1][0]][pos[1][1]] = 0
-            # board.play(0, pos[1], pos[0])
-            if scen == None:
-                continue
+            # scen, p = self.maximiser(depth-1, board, pos[0], alpha, val)
+            subBoard[pos[1][0]][pos[1][1]] = 0
             if scen <= val:
                 val = scen
                 best = pos
-
-        print('mini', val, best)
+            # if val < alpha:
+            #     break
+        # print('mini', val, best)
         return (val, best)
 
     def play(self, board, compulsory = None):
@@ -375,18 +385,19 @@ class Player:
         # while(len(res) != 4):
         #     res = [int(i)%3 for i in input().split(" ")]
         # print(list(suur_compile_possibilities(board, compulsory)))
-        print('player compulsory', compulsory)
+        # print('player compulsory', compulsory)
         # res = self.getMove(board, compulsory)
-        val, res = self.maximiser(10, board, compulsory)
-        print(val, res)
-        print('player move', res[0], res[1])
+        val, res = self.maximiser(4, board, compulsory)
+        print('player play', compulsory, val, res)
+        # print('player move', res[0], res[1])
+        # print(board)
         return (res[0], res[1])
 
     def getMove(self, board, compulsory = None):
         # print(board)
         res, subBoard = self.getSubBoard(board, compulsory)
 
-        value, move = maximiser(self.team, 4, subBoard)
+        value, move = maximiser(self.team, 10, subBoard)
         if move:
             res.append(move[0])
             res.append(move[1])
@@ -421,9 +432,108 @@ class Player:
 
         return (None, None)
 
+def kiire_hinnang(team, board, depth = 0):
+    kolmReas = [
+        [ 0, 1, 2 ],
+        [ 3, 4, 5 ],
+        [ 6, 7, 8 ],
+        [ 0, 3, 6 ],
+        [ 1, 4, 7 ],
+        [ 2, 5, 8 ],
+        [ 0, 4, 8 ],
+        [ 2, 4, 6 ]
+    ];
+    vaartused = [
+        [     0,   -10,  -100, -1000 ],
+        [    10,     0,     0,     0 ],
+        [   100,     0,     0,     0 ],
+        [  1000,     0,     0,     0 ]
+    ];
+    opponent = 3 - team;
+    totalPlayers = 0
+    totalOthers = 0
+    t = 0
+    tempBoard = board.flatten()
+    if [0,0,0,0,0,0,0,0,0] in tempBoard:
+        return 0
+
+    for i in range(8):
+        players = others = 0
+        for j in range(3):
+            piece = tempBoard[kolmReas[i][j]]
+            if piece == team:
+                players += 1
+            elif piece == opponent:
+                others += 1
+        t += vaartused[players][others]
+
+        totalPlayers += players
+        totalOthers += others
+
+
+    difference = totalPlayers - totalOthers
+    if difference > 1:
+        t += 10000*difference
+    elif difference < -1:
+        t -= -10000*difference
+    return t
+
+def maximiser(team, depth, board):
+    h = kiire_hinnang(team, board, depth)
+    if depth == 0 or np.count_nonzero(board) == 9:
+        return (h, None)
+    
+    val = -inf
+    best = None
+    for pos in compile_possibilities(board):
+        if not best:
+            best = pos
+        board[pos[0]][pos[1]] = team
+        scen, p = minimiser(team, depth-1, board)
+        # print('scen max', team, scen, h)
+        board[pos[0]][pos[1]] = 0
+        if scen == None:
+            continue
+        if scen > val:
+            # print('bigger', scen, val)
+            val = scen
+            best = pos
+
+    # print('max', team, val, best)
+    return (val, best)
+
+def minimiser(team, depth, board):
+    h = kiire_hinnang(team, board, depth)
+    if depth == 0 or np.count_nonzero(board) == 9:
+        return (h, None)
+    
+    val = inf
+    best = None
+    for pos in compile_possibilities(board):
+        if not best:
+            best = pos
+        board[pos[0]][pos[1]] = 3 - team
+        scen, p = maximiser(team, depth-1, board)
+        # print('scen min', team, scen, h)
+        board[pos[0]][pos[1]] = 0
+        if scen == None:
+            continue
+        if scen < val:
+            # print('smaller', scen, val)
+            val = scen
+            best = pos
+        
+    # print('min', team, val, best)
+    return (val, best)
+    
+
 # asd = np.array([[0, 0, 0],
 #                 [0, 0, 0],
 #                 [0, 0, 0]])
+
+asd = np.array([[0, 0, 0],
+       [0, 0, 2],
+       [2, 2, 1]])
 
 # asd = np.array([[0, 0, 0],
 #  [2, 1, 2],
@@ -435,13 +545,19 @@ class Player:
 
 # over = False
 # team = 1
+# count = 0
 # while not over:
-#     value, move = maximiser(team, 10, asd)
+#     value, move = maximiser(team, 4, asd)
 #     print('final move', team, value, move)
 #     asd[move[0]][move[1]] = team
 #     print(asd)
+#     countTeam = np.count_nonzero(asd == team)
+#     print(countTeam)
 #     over = check([team, team, team], asd) or np.count_nonzero(asd) == 9
 #     if team == 1:
 #         team = 2
 #     else:
 #         team = 1
+#     count += 1
+#     # if count > 4:
+#     #     break

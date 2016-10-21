@@ -19,8 +19,12 @@ class Interface:
         board = self.board.get_board()
         retval = (0, 0)
         while(retval != (1, (1, player.team))):
+            # print('before', board)
             play = [(i%3, j%3) for i, j in player.play(board, self.board.nextSector)]
             retval = self.board.play(player.team, play[1], play[0])
+            # print('board', player.team, play)
+            # print(retval)
+            print('after', board)
 
     def game(self):
         while not self.game_over:

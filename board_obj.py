@@ -87,6 +87,8 @@ class Board:
             If self is the sub board and the position being played to has already been played, returns (0, played_value)
             If self is the sub board and the position being played to is empty, returns (1, played_value)
         """
+
+        # print('in board', team, place, board)
         if not self.level:
             if not self.winner:
                 if not self.board[place[0]][place[1]]:
